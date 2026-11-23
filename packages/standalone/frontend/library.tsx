@@ -4,6 +4,7 @@ import { Badge, Button, Input, Switch } from './components/ui'
 import { WorkbenchDialog } from './components/workbench-dialog'
 import { failureMessage, management, useManagementResource } from './management'
 import { t, numLocale } from './i18n.mjs'
+import { useReveal } from './motion/hooks'
 
 type ResourceKind = 'mcp' | 'prompt' | 'skill' | 'agent'
 interface Resource { id: string; kind: ResourceKind; name: string; content: string; enabled: boolean }
@@ -146,6 +147,8 @@ export function Library({ active }: { active: boolean }) {
   const visibleResources = resources.filter(row => (kind === 'all' || row.kind === kind) && row.name.toLowerCase().includes(search.trim().toLowerCase()))
   const visibleProfiles = profiles.filter(row => row.name.toLowerCase().includes(search.trim().toLowerCase()))
   const blocked = !!busy || loading || !!editor || profileEditor
+  // 列表入场：容器进视口后逐项错峰升起
+  const reveal = useReveal<HTMLElement>(visibleResources.length + visibleProfiles.length)
   const run = async (path: string, body: object, id: string, message: string) => {
     if (lock.current) return
     lock.current = true; setBusy(id); setError(''); setStatus('')
@@ -183,10 +186,10 @@ export function Library({ active }: { active: boolean }) {
     </div>
     {(error || loadError) && <div className="wb-feedback wb-error" role="alert"><CircleAlert size={16} /><span>{error || loadError}</span>{loadError && <Button variant="outline" disabled={blocked} onClick={() => void reload()}>{t('action.retry')}</Button>}</div>}
     {status && <div className="wb-feedback wb-status" role="status"><Check size={16} /><span>{status}</span></div>}
-    <section className="lib-list" role="tabpanel" id={`lib-panel-${tab}`} aria-labelledby={`lib-tab-${tab}`} aria-busy={loading}>
-      {tab === 'resources' ? visibleResources.map(resource => {
+    <section className="lib-list m-reveal" ref={reveal} role="tabpanel" id={`lib-panel-${tab}`} aria-labelledby={`lib-tab-${tab}`} aria-busy={loading}>
+      {tab === 'resources' ? visibleResources.map((resource, index) => {
         const type = kinds.find(row => row.id === resource.kind)!
-        return <div className="lib-resource" key={resource.id}>
+        return <div className="lib-resource" key={resource.id} style={{ '--i': String(index) } as React.CSSProperties}>
           <div className="lib-resource-row">
             <span className={`wb-app-icon ${resource.kind === 'skill' || resource.kind === 'agent' ? 'is-green' : ''}`}><type.icon size={20} /></span>
             <div className="lib-name"><strong>{resource.name}</strong><small>{t.format('lib.bytes', { n: new TextEncoder().encode(resource.content).byteLength.toLocaleString(numLocale()) })}</small></div>
@@ -198,7 +201,7 @@ export function Library({ active }: { active: boolean }) {
           {removing === resource.id && <div className="wb-remove lib-confirm"><span>{t.format('lib.confirmDeleteResource', { name: resource.name })}</span><Button variant="outline" disabled={!!busy} onClick={() => setRemoving('')}>{t('action.cancel')}</Button>
             <Button variant="outline" className="wb-danger" busy={busy === resource.id} disabled={!!busy} onClick={() => void run('/library/resources/remove', { id: resource.id }, resource.id, t('lib.resourceDeleted'))}><Trash2 size={14} />{t('action.confirmDelete')}</Button></div>}
         </div>
-      }) : visibleProfiles.map(profile => <div className="lib-profile" key={profile.id}>
+      }) : visibleProfiles.map((profile, index) => <div className="lib-profile" key={profile.id} style={{ '--i': String(index) } as React.CSSProperties}>
         <div className="lib-profile-row"><span className="wb-app-icon is-green"><Layers3 size={20} /></span><div className="lib-name"><strong>{profile.name}</strong><small>{t.format('lib.clientsCount', { n: profile.clients.length })}</small></div>
           <div className="lib-actions"><Button variant="ghost" aria-label={t.format('lib.viewProfile', { name: profile.name })} title={t('lib.viewClients')} aria-expanded={expanded === profile.id} aria-controls={`lib-clients-${profile.id}`} onClick={() => setExpanded(expanded === profile.id ? '' : profile.id)}>{expanded === profile.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</Button>
             <Button variant="outline" busy={busy === `apply:${profile.id}`} disabled={blocked} onClick={() => void run('/library/profiles/apply', { id: profile.id }, `apply:${profile.id}`, '')}><Play size={14} />{t('lib.apply')}</Button>

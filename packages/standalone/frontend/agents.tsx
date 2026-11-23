@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Check, ChevronDown, ChevronUp, CircleAlert, Clock3, FileJson, FolderSearch, KeyRound, Monitor, Play, Plus, RefreshCw, Save, Search, Square, Terminal, Trash2, Upload } from 'lucide-react'
 import { Badge, Button, Input, Switch } from './components/ui'
+import { ProviderIcon } from './components/provider-icon'
 import { WorkbenchDialog } from './components/workbench-dialog'
 import { failureMessage, management, useManagementResource } from './management'
 import { t, numLocale } from './i18n.mjs'
+import { useReveal } from './motion/hooks'
 import type { Host, Summary } from './types'
 
 interface Client {
@@ -30,7 +32,7 @@ const dateLabel = (value?: number | string) => {
   return Number.isNaN(date.valueOf()) ? '' : date.toLocaleString(numLocale(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
-function ClientRow({ client, summary, onChanged }: { client: Client; summary: Summary; onChanged(): Promise<void> }) {
+function ClientRow({ client, summary, index, onChanged }: { client: Client; summary: Summary; index: number; onChanged(): Promise<void> }) {
   const [expanded, setExpanded] = useState(false)
   const [executable, setExecutable] = useState(client.executable)
   const [cwd, setCwd] = useState(client.cwd)
@@ -44,6 +46,21 @@ function ClientRow({ client, summary, onChanged }: { client: Client; summary: Su
   useEffect(() => () => { live.current = false }, [])
   const availableModels = useMemo(() => summary.catalog.filter(row => row.routable && !row.hiddenByUser && !row.hiddenByGroup), [summary.catalog])
   const dirty = executable !== client.executable || cwd !== client.cwd || model !== client.model || mode !== client.mode
+  // 接入开关：magpie 的 agent 行只表达"是否接入"，落盘仍走同一个保存接口。
+  // 关闭时不删配置，只把模型清空 —— 用户重新打开不需要再选一遍。
+  const attached = client.mode === 'gateway' && !!model
+  const toggle = async (next: boolean) => {
+    if (lock.current) return
+    lock.current = true; setBusy('attach'); setError(''); setStatus('')
+    try {
+      await management('/workbench/clients/save', {
+        id: client.id,
+        ...(next ? { mode: 'gateway', model: availableModels[0]?.id ?? '' } : { model: '' }),
+      })
+      if (live.current) { setStatus(next ? t('ag.attached') : t('ag.detached')); await onChanged() }
+    } catch (reason) { if (live.current) setError(failureMessage(reason)) }
+    finally { lock.current = false; if (live.current) setBusy('') }
+  }
   const run = async (action: 'save' | 'launch' | 'stop') => {
     if (lock.current) return
     lock.current = true; setBusy(action); setError(''); setStatus('')
@@ -60,9 +77,9 @@ function ClientRow({ client, summary, onChanged }: { client: Client; summary: Su
     } catch (reason) { if (live.current) setError(failureMessage(reason)) }
     finally { lock.current = false; if (live.current) setBusy('') }
   }
-  return <div className="wb-client" data-running={client.running ? 'true' : undefined}>
+  return <div className="wb-client" data-running={client.running ? 'true' : undefined} style={{ '--i': String(index) } as React.CSSProperties}>
     <div className="wb-client-row">
-      <span className={`wb-app-icon ${client.kind === 'desktop' ? 'is-green' : ''}`}>{client.kind === 'desktop' ? <Monitor size={22} /> : <Terminal size={22} />}</span>
+      <span className={`wb-app-icon ${client.kind === 'desktop' ? 'is-green' : ''}`}><ProviderIcon id={client.id} name={client.name} /></span>
       <div className="wb-client-name"><strong>{client.name}</strong><small>{client.kind === 'desktop' ? t('ag.desktopApp') : t('ag.cliClient')}<span> · </span>{client.running ? t('ag.running') : client.installed ? t('ag.detected') : t('ag.notDetected')}</small></div>
       <label className="wb-model-select"><span className="wb-sr-only">{t.format('ag.modelFor', { name: client.name })}</span><select value={model} disabled={!!busy || client.running || client.nativeOnly} onChange={event => { setModel(event.target.value); setStatus('') }}>
         <option value="">{mode === 'gateway' ? t('ag.selectGatewayModel') : t('ag.defaultModel')}</option>
@@ -74,10 +91,19 @@ function ClientRow({ client, summary, onChanged }: { client: Client; summary: Su
         <Button variant="ghost" title={t.format('ag.launchSettings', { name: client.name })} aria-label={t.format('ag.launchSettings', { name: client.name })} aria-expanded={expanded} disabled={!!busy} onClick={() => setExpanded(!expanded)}>{expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</Button>
         {client.running ? <Button variant="outline" disabled={!!busy} busy={busy === 'stop'} onClick={() => void run('stop')}><Square size={13} />{t('ag.stop')}</Button>
           : <Button disabled={!!busy || !executable.trim() || (mode === 'gateway' && !model)} busy={busy === 'launch'} onClick={() => void run('launch')}><Play size={14} />{t('ag.start')}</Button>}
+        <Switch checked={attached} aria-label={t.format('ag.attachGateway', { name: client.name })} disabled={!!busy || client.running || client.nativeOnly} onCheckedChange={next => void toggle(next)} />
       </div>
     </div>
     {expanded && <form className="wb-client-settings" onSubmit={event => { event.preventDefault(); void run('save') }}>
-      <label>{t('ag.executable')}<Input value={executable} disabled={!!busy || client.running} placeholder={t('ag.executablePlaceholder')} onChange={event => setExecutable(event.target.value)} /></label>
+      {/* 参照 magpie 的 agent 行：主界面只表达"接入/不接入"与用哪个模型；
+          可执行文件、工作目录这类环境细节收进展开区。
+          检测到的路径只读展示 —— 它是自动探测的结果，不是要用户填的字段；
+          只有确实需要覆盖时才用"手动指定路径"输入。 */}
+      <div className="wb-client-detected">
+        <span>{t('ag.executable')}</span>
+        <code title={client.executable || t('ag.notDetected')}>{client.executable || t('ag.notDetectedManual')}</code>
+      </div>
+      <label>{t('ag.manualPath')}<Input value={executable} disabled={!!busy || client.running} placeholder={t('ag.manualPathPlaceholder')} onChange={event => setExecutable(event.target.value)} /></label>
       <label>{t('ag.cwd')}<Input value={cwd} disabled={!!busy || client.running} placeholder={t('ag.cwdPlaceholder')} onChange={event => setCwd(event.target.value)} /></label>
       <label>{t('ag.accessMode')}<select value={mode} disabled={!!busy || client.running || client.nativeOnly} onChange={event => setMode(event.target.value as Client['mode'])}><option value="gateway">{t('ag.gatewayMode')}</option><option value="native">{t('ag.nativeMode')}</option></select></label>
       <Button type="submit" variant="outline" busy={busy === 'save'} disabled={!!busy || !dirty || !!client.running}><Save size={14} />{t('action.save')}</Button>
@@ -231,6 +257,9 @@ export function Agents({ summary, active, host }: { summary: Summary; active: bo
     } catch (reason) { if (live.current) setError(failureMessage(reason)) }
     finally { lock.current = false; if (live.current) setBusy('') }
   }
+  // 两个列表各自入场：容器进视口后逐项错峰升起
+  const clientReveal = useReveal<HTMLElement>(workbench.data?.clients.length ?? 0)
+  const accountReveal = useReveal<HTMLElement>(accounts.length)
   const rows = accounts.filter(account => `${account.label} ${account.provider} ${account.plan ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()))
   return <div className="wb-page">
     <header className="wb-heading"><div><span className="wb-eyebrow">DESKTOP WORKBENCH</span><h1>{t('nav.agents')}</h1><p>{t('ag.sub')}</p></div>
@@ -238,8 +267,8 @@ export function Agents({ summary, active, host }: { summary: Summary; active: bo
     <div className="wb-summary"><span><strong>{workbench.data ? workbench.data.clients.filter(client => client.installed).length : '—'}</strong> {t('ag.installedClients')}</span><span><i className="wb-dot" /><strong>{workbench.data ? workbench.data.clients.filter(client => client.running).length : '—'}</strong> {t('ag.running')}</span><span><strong>{subscriptions.data || workbench.data ? accounts.filter(account => account.enabled).length : '—'}</strong> {t('ag.enabledSubs')}</span></div>
     <div className="wb-section-heading"><h2><Monitor size={17} />{t('ag.clients')}</h2><Badge tone="blue">{t('ag.thirdPartyAccess')}</Badge></div>
     {workbench.error && <div className="wb-feedback wb-error" role="alert"><CircleAlert size={16} /><span>{workbench.error}</span><Button variant="outline" onClick={() => void workbench.reload()}>{t('action.retry')}</Button></div>}
-    <section className="wb-client-list" aria-label={t('ag.clients')} aria-busy={workbench.loading}>
-      {workbench.data?.clients.map(client => <ClientRow key={client.id} client={client} summary={summary} onChanged={workbench.reload} />)}
+    <section className="wb-client-list m-reveal" ref={clientReveal} aria-label={t('ag.clients')} aria-busy={workbench.loading}>
+      {workbench.data?.clients.map((client, index) => <ClientRow key={client.id} client={client} summary={summary} index={index} onChanged={workbench.reload} />)}
       {!workbench.data && workbench.loading && <div className="wb-empty" role="status"><RefreshCw size={22} /><strong>{t('ag.detecting')}</strong></div>}
       {workbench.data?.clients.length === 0 && <div className="wb-empty"><Terminal size={24} /><strong>{t('ag.noClients')}</strong><Button variant="outline" onClick={() => void workbench.reload()}>{t('ag.redetect')}</Button></div>}
     </section>
@@ -254,13 +283,13 @@ export function Agents({ summary, active, host }: { summary: Summary; active: bo
     <div className="wb-toolbar"><label className="wb-search"><Search size={16} /><Input aria-label={t('ag.searchSubs')} placeholder={t('ag.searchSubsPlaceholder')} value={search} onChange={event => setSearch(event.target.value)} /></label><span className="wb-toolbar-meta">{t('ag.quotaWindows')}</span></div>
     {(error || subscriptions.error) && <div className="wb-feedback wb-error" role="alert"><CircleAlert size={16} /><span>{error || subscriptions.error}</span><Button variant="outline" disabled={!!busy} onClick={() => { setError(''); void subscriptions.reload() }}>{t('action.retry')}</Button></div>}
     {status && <div className="wb-feedback wb-status" role="status"><Check size={16} />{status}</div>}
-    <section className="wb-account-list" aria-label={t('ag.subAccounts')} aria-busy={subscriptions.loading}>
-      {rows.map(account => {
+    <section className="wb-account-list m-reveal" ref={accountReveal} aria-label={t('ag.subAccounts')} aria-busy={subscriptions.loading}>
+      {rows.map((account, index) => {
         const windows = account.quota?.windows ?? []
         const fiveHour = windows.find(window => window.kind === 'five_hour' || window.windowSeconds === 18000 || /5\s*h|5.?hour|five.?hour|5.?小时|session|short/i.test(window.name))
         const weekly = windows.find(window => window.kind === 'weekly' || window.windowSeconds === 604800 || /week|seven.?day|7.?day|周|星期/i.test(window.name))
         const other = windows.filter(window => window !== fiveHour && window !== weekly)
-        return <div className="wb-account" key={account.id}>
+        return <div className="wb-account" key={account.id} style={{ '--i': String(index) } as React.CSSProperties}>
           <div className="wb-account-info"><span className="wb-app-icon is-green"><KeyRound size={20} /></span><div><strong>{account.label}</strong><small>{account.provider}{account.plan || account.quota?.plan ? ` · ${account.plan || account.quota?.plan}` : ''}</small><small>{t.format('ag.modelsCount', { n: account.models?.length ?? 0 })}</small></div>
             <Switch checked={account.enabled} aria-label={t.format('ag.enableSub', { name: account.label })} disabled={!!busy} onCheckedChange={enabled => void run('/subscriptions/enabled', { id: account.id, enabled }, `enable:${account.id}`)} /></div>
           <div className="wb-quota-windows"><QuotaMeter title={t('ag.fiveHours')} window={fiveHour} /><QuotaMeter title={t('ag.weekly')} window={weekly} />{other.map((window, index) => <QuotaMeter title={window.name} window={window} key={`${window.name}:${index}`} />)}</div>

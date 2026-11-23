@@ -208,6 +208,7 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
     {models.length ? <div className="model-table" role="table" aria-label={t('mdl.listAria')} aria-rowcount={models.length + 1} aria-colcount={5}>
       <div className="model-table-header" role="row"><span role="columnheader">{t('mdl.colModel')}</span><span role="columnheader">{t('mdl.colCapability')}</span>
         <span role="columnheader">{t('mdl.colLimits')}</span><span role="columnheader">{t('mdl.colState')}</span><span role="columnheader">{t('mdl.colActions')}</span></div>
+      <div className="model-table-body">
       <div ref={scrollRef} className="model-scroll" role="rowgroup" tabIndex={0} aria-label={t('mdl.scrollAria')} onKeyDown={event => {
         if (event.target !== event.currentTarget) return
         if (event.key === 'Home' || event.key === 'End') {
@@ -260,6 +261,7 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
             </div>
           })}
         </div>
+      </div>
       </div>
     </div> : <div className="model-empty"><Boxes size={28} /><h2>{summary.catalog.length ? t('mdl.emptyMatched') : t('mdl.emptyCatalog')}</h2>
       <p>{summary.catalog.length ? t('mdl.emptyMatchedHint') : t('mdl.emptyCatalogHint')}</p>

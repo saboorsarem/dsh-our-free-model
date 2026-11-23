@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { CircleAlert, Check, LoaderCircle, RotateCcw, Save, Settings2, RefreshCw } from 'lucide-react'
+import { CircleAlert, Check, LoaderCircle, RotateCcw, Save, Settings2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge, Button, Card, Input } from './components/ui'
 import { t } from './i18n.mjs'
 import { settingsDraft, settingsChanged, syncSettings, validateSettingsDraft } from './settings-data.mjs'
@@ -9,7 +9,7 @@ import type { Host, Summary } from './types'
 import './settings.css'
 
 type Draft = ReturnType<typeof settingsDraft>
-type NumberField = 'defaultMaxTokens' | 'probeIntervalMinutes'
+type NumberField = 'defaultMaxTokens' | 'probeIntervalMinutes' | 'laneMaxTries'
 const connectionError = (reason: unknown) => reason instanceof Error
   ? reason.name === 'TimeoutError' ? t('notice.saveTimeout')
     : reason instanceof TypeError && /fetch/i.test(reason.message) ? t('notice.saveFetchFailed')
@@ -22,6 +22,8 @@ export function Settings({ summary, host, active }: { summary: Summary; host: Ho
   const [errors, setErrors] = useState<Partial<Record<NumberField, string>>>({})
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [exitNote, setExitNote] = useState('')
+  const [clearingExits, setClearingExits] = useState(false)
   const savingRef = useRef(false)
   const mounted = useRef(true)
   const activeRef = useRef(active)
@@ -35,6 +37,23 @@ export function Settings({ summary, host, active }: { summary: Summary; host: Ho
     setState(previous => syncSettings(previous, summary.settings, savingRef.current))
   }, [summary.settings])
   const dirty = settingsChanged(state.draft, state.saved)
+  // Masked labels only — the addresses themselves never reach this page.
+  const laneExitLabels: string[] = summary.settings.freeLane?.proxies ?? []
+  const clearExits = async () => {
+    if (clearingExits || !activeRef.current) return
+    setClearingExits(true)
+    setExitNote('')
+    try {
+      const cleared = await host.clearLaneExits()
+      if (!mounted.current) return
+      setExitNote(t.format('cfg.exitCleared', { n: cleared }))
+      try { await host.refresh() } catch { /* 冷却已清，刷新失败不影响结论 */ }
+    } catch (reason) {
+      if (mounted.current) setExitNote(connectionError(reason))
+    } finally {
+      if (mounted.current) setClearingExits(false)
+    }
+  }
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setState(previous => ({ ...previous, draft: { ...previous.draft, [key]: value } }))
     setErrors(previous => ({ ...previous, [key]: undefined }))
@@ -105,6 +124,29 @@ export function Settings({ summary, host, active }: { summary: Summary; host: Ho
           <p className="settings-note" role="note"><CircleAlert size={15} /><span>{summary.automaticRefresh
             ? t('cfg.refreshOn')
             : t('cfg.refreshOff')}</span></p>
+        </Card>
+        <Card className="settings-card"><div className="settings-card-heading"><ShieldCheck size={16} /><div><h2>{t('cfg.laneTitle')}</h2><p>{t('cfg.laneSub')}</p></div></div>
+          <div className="settings-field">
+            <label htmlFor="setting-laneExits"><strong>{t('cfg.laneExitsLabel')}</strong><small>{t('cfg.laneExitsHelp')}</small></label>
+            <textarea id="setting-laneExits" name="laneExits" rows={4} className="settings-textarea"
+              placeholder={'http://127.0.0.1:7890\nsocks5://127.0.0.1:1080'}
+              value={state.draft.laneExits} onChange={event => update('laneExits', event.target.value)} />
+            <p className="settings-hint">{t('cfg.laneExitsHint')}</p>
+          </div>
+          {numeric('laneMaxTries', t('cfg.laneMaxTries'), t('cfg.laneMaxTriesHelp'), 1, 8)}
+          <div className="settings-field">
+            <span><strong>{t('cfg.currentExits')}</strong><small>{laneExitLabels.length === 0 ? t('cfg.currentExitsEmpty') : t('cfg.currentExitsHelp')}</small></span>
+            <ul className="settings-exit-list">
+              {laneExitLabels.map((label, index) => <li key={`${label}:${index}`}><code>{label}</code></li>)}
+            </ul>
+          </div>
+          <div className="settings-field">
+            <span><strong>{t('cfg.exitCooldown')}</strong><small>{t('cfg.exitCooldownHelp')}</small></span>
+            <Button variant="outline" disabled={saving || clearingExits} onClick={() => { void clearExits() }}>
+              {clearingExits ? <LoaderCircle size={15} className="spinning" /> : <RotateCcw size={15} />}{clearingExits ? t('cfg.clearingExits') : t('cfg.clearCooldown')}
+            </Button>
+          </div>
+          {exitNote && <p className="settings-hint" role="status">{exitNote}</p>}
         </Card>
         <div className="settings-footer"><span role="status" aria-live="polite" className={statusClass}><span className="settings-status-dot" aria-hidden="true" />{saving ? t('cfg.saving') : dirty ? t('cfg.unsaved') : message || t('cfg.synced')}</span>
           <div className="settings-actions"><Button variant="outline" disabled={!dirty || saving} onClick={() => {

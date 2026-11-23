@@ -161,39 +161,11 @@ const restartRequiredVersions = globalThis[RESTART_MARKER] ??= new Map()
 const UPGRADE_LOCKS = Symbol.for('our-free-model.upgrade-locks')
 const upgradeLocks = globalThis[UPGRADE_LOCKS] ??= new Set()
 
-/** Parse `1.2.3` / `1.2.3-rc.4` into a comparable tuple; `null` when malformed. */
-export function parseVersion(value) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([\w.]+))?$/.exec(String(value ?? '').trim())
-  if (match === null) return null
-  const pre = match[4] === undefined ? null : match[4].split('.')
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]), pre }
-}
-
-/** -1 | 0 | 1 in semver precedence; a pre-release sorts before its release. */
-export function compareVersions(a, b) {
-  const left = parseVersion(a)
-  const right = parseVersion(b)
-  if (left === null || right === null) return a === b ? 0 : a > b ? 1 : -1
-  for (const key of ['major', 'minor', 'patch']) {
-    if (left[key] !== right[key]) return left[key] < right[key] ? -1 : 1
-  }
-  if (left.pre === null && right.pre === null) return 0
-  if (left.pre === null) return 1
-  if (right.pre === null) return -1
-  const width = Math.max(left.pre.length, right.pre.length)
-  for (let i = 0; i < width; i += 1) {
-    const x = left.pre[i]
-    const y = right.pre[i]
-    if (x === undefined) return -1
-    if (y === undefined) return 1
-    const xn = /^\d+$/.test(x)
-    const yn = /^\d+$/.test(y)
-    if (xn && yn && Number(x) !== Number(y)) return Number(x) < Number(y) ? -1 : 1
-    if (xn !== yn) return xn ? -1 : 1
-    if (x !== y) return x < y ? -1 : 1
-  }
-  return 0
-}
+// Semver comparison lives in ./semver.js — the standalone package ships
+// without the updater but with the extension platform, which compares a
+// registry entry's minHost against the host version.
+import { parseVersion, compareVersions } from './semver.js'
+export { parseVersion, compareVersions }
 
 /** Detect a plugin install whose package files still belong to a package-manager store. */
 export function packageUsesHardLinks(pkgDir) {
@@ -488,28 +460,30 @@ function isTransientDownloadError(error) {
  *  mutable branch's raw bytes could move between the manifest read and the file
  *  download, which is exactly what pinning exists to prevent.
  *
- *  Both jsDelivr edges are recognized as origins here, because the manifest may
- *  itself have been discovered on either one: a gcore-sourced manifest composes
- *  gcore file URLs, and those need the same fallbacks. */
+ *  A manifest may be discovered on either jsDelivr edge, raw, or the raw proxy;
+ *  each official pinned source gets fallbacks to the same commit and file. */
 function stagedFileSources(manifestUrl, manifest, relativePath) {
   const file = fileUrlOf(manifestUrl, manifest, relativePath)
   const url = new URL(file)
-  const prefix = `/gh/${REPO}@`
-  const jsdelivr = url.hostname === 'cdn.jsdelivr.net' || url.hostname === 'gcore.jsdelivr.net'
-  if (url.protocol !== 'https:' || !jsdelivr || url.port
-    || url.username || url.password || !url.pathname.startsWith(prefix)
-    || !/^[a-f0-9]{40}\//.test(url.pathname.slice(prefix.length))) return [file]
-  const sha = url.pathname.slice(prefix.length).split('/')[0]
-  const rest = url.pathname.slice(prefix.length + sha.length + 1)
-  const cdn = new URL(url)
-  cdn.hostname = 'cdn.jsdelivr.net'
-  const gcore = new URL(url)
-  gcore.hostname = 'gcore.jsdelivr.net'
+  if (url.protocol !== 'https:' || url.port || url.username || url.password) return [file]
+  const cdnPrefix = `/gh/${REPO}@`
+  const rawPrefix = `/${REPO}/`
+  const proxyPrefix = `/https://raw.githubusercontent.com/${REPO}/`
+  let suffix
+  if (['cdn.jsdelivr.net', 'gcore.jsdelivr.net'].includes(url.hostname) && url.pathname.startsWith(cdnPrefix)) {
+    suffix = url.pathname.slice(cdnPrefix.length)
+  } else if (url.hostname === 'raw.githubusercontent.com' && url.pathname.startsWith(rawPrefix)) {
+    suffix = url.pathname.slice(rawPrefix.length)
+  } else if (url.hostname === 'gh-proxy.com' && url.pathname.startsWith(proxyPrefix)) {
+    suffix = url.pathname.slice(proxyPrefix.length)
+  } else return [file]
+  if (!/^[a-f0-9]{40}\//.test(suffix)) return [file]
+  const [sha, ...pathParts] = suffix.split('/')
+  const rest = pathParts.join('/')
+  const cdn = `https://cdn.jsdelivr.net/gh/${REPO}@${sha}/${rest}`
+  const gcore = `https://gcore.jsdelivr.net/gh/${REPO}@${sha}/${rest}`
   const raw = `https://raw.githubusercontent.com/${REPO}/${sha}/${rest}`
-  // Keep the origin that was actually asked first, then the other edge, then the
-  // two raw transports at the same pinned commit.
-  const others = [cdn.href, gcore.href].filter(href => href !== file)
-  return [file, ...others, raw, viaRawProxy(`${REPO}/${sha}/${rest}`)]
+  return [...new Set([file, cdn, gcore, raw, viaRawProxy(`${REPO}/${sha}/${rest}`)])]
 }
 
 export async function stageRelease({ manifest, manifestUrl, stageDir, fetchImpl = fetch, concurrency = 4, onProgress = () => {}, timeoutMs = 30000 }) {
@@ -542,9 +516,9 @@ export async function stageRelease({ manifest, manifestUrl, stageDir, fetchImpl 
       let lastError
       for (let attempt = 1; attempt <= STAGE_ATTEMPTS; attempt += 1) {
         try {
-          const signal = AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined
           let body
           for (let mirror = 0; mirror < sources.length; mirror++) {
+            const signal = AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined
             try {
               const response = await fetchImpl(bustCdnCache(sources[mirror]), { redirect: 'error', signal })
               if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -557,11 +531,13 @@ export async function stageRelease({ manifest, manifestUrl, stageDir, fetchImpl 
               // jsDelivr structurally cannot serve: its size ceiling answers 403
               // for the vendored engine binary, so the same pinned commit's raw
               // transport is tried instead. Any other 403 still stops here.
+              const host = new URL(sources[mirror]).hostname
               const oversized = status === '403' && ENGINE_BINARY.test(file.path)
+                && (host === 'cdn.jsdelivr.net' || host === 'gcore.jsdelivr.net')
               const canFallback = status
                 ? /^(3\d\d|404|429|5\d\d)$/.test(status) || oversized
                 : isTransientDownloadError(error)
-              if (!canFallback || mirror === sources.length - 1 || signal?.aborted) throw error
+              if (!canFallback || mirror === sources.length - 1) throw error
             }
           }
           if (body.length !== file.size) throw new Error(`size ${body.length} != manifest ${file.size}`)
@@ -884,12 +860,26 @@ export function verifyInstalled(pkgDir, manifest) {
  * @param {string} pkgDir - the installed package directory
  * @returns {boolean}
  */
-export function isPackageManagerOwned(pkgDir) {
-  const profileDir = path.dirname(path.dirname(path.resolve(pkgDir)))
+export function isPackageManagerOwned(pkgDir, packageName = PACKAGE_NAME) {
+  const profileDir = profileDirOf(pkgDir)
   const lockfile = readTextFile(path.join(profileDir, 'pnpm-lock.yaml'))
-  if (lockfile !== undefined && lockfileDeclaresPackage(lockfile, PACKAGE_NAME)) return true
+  if (lockfile !== undefined && lockfileDeclaresPackage(lockfile, packageName)) return true
   const modules = readTextFile(path.join(profileDir, 'node_modules', '.modules.yaml'))
-  return modules !== undefined && modulesHoistsPackage(modules, PACKAGE_NAME)
+  return modules !== undefined && modulesHoistsPackage(modules, packageName)
+}
+
+/**
+ * The profile root a package directory belongs to.
+ *
+ * A bare install is <profile>/node_modules/<name>; a scoped one is
+ * <profile>/node_modules/@scope/<name>. Walking to node_modules instead of
+ * counting two parents keeps both layouts pointed at the profile, where pnpm
+ * writes its lockfile and .modules.yaml (issue #773).
+ */
+export function profileDirOf(pkgDir) {
+  let dir = path.resolve(pkgDir)
+  while (dir !== path.dirname(dir) && path.basename(dir) !== 'node_modules') dir = path.dirname(dir)
+  return path.dirname(dir)
 }
 
 function readTextFile(file) {
@@ -907,9 +897,10 @@ function readTextFile(file) {
  *  full install — a real tree inside the profile declared as a relative
  *  `link:`. A `file:`, tarball-URL or registry specifier does record a source
  *  pnpm can re-extract, and stays "owned". */
-function lockfileDeclaresPackage(text, name) {
+export function lockfileDeclaresPackage(text, name) {
   const lines = text.split(/\r?\n/)
-  const entry = new RegExp(`^(\\s*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*$`)
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const entry = new RegExp(`^(\\s*)['"]?${escaped}['"]?\\s*:\\s*$`)
   for (let index = 0; index < lines.length; index += 1) {
     const match = entry.exec(lines[index])
     if (match === null) continue

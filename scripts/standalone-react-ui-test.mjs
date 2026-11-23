@@ -17,7 +17,7 @@ const baseUrl = `http://127.0.0.1:${server.address().port}`
 management.setPort(server.address().port)
 const browser = await chromium.launch({ headless: true })
 const settings = { enabled: true, exposeRegionModels: true, streamRecovery: true, standaloneProbe: false, defaultMaxTokens: 32768, probeIntervalMinutes: 15 }
-let loggedIn = false, key = 'ofm-ui-isolated-key', summaryReads = 0
+let loggedIn = false, key = 'ofm-ui-isolated-key', summaryReads = 0, disclaimerAcknowledged = false, requestLang = ''
 const summary = () => ({ version: 'test', baseUrl, dataDir: 'isolated', networkMode: 'fixture', automaticRefresh: false,
   catalogSyncedAt: 0, settings: { ...settings }, channels: { state: 'ready' }, eacAuth: { local: false },
   catalog: [{ id: 'fixture/model', name: '测试模型', channel: 'anonymous', routable: true, availability: 'available' }] })
@@ -28,12 +28,15 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/api/management/**', async route => {
     const request = route.request(), endpoint = new URL(request.url()).pathname.replace('/api/management', '')
+    requestLang = request.headers()['x-ofm-lang']
     const body = request.postDataJSON()
     const answer = (value, status = 200) => route.fulfill({ status, json: value })
     if (endpoint === '/session') { loggedIn = body.key === key || body.bootstrapToken === 'test'; return answer(loggedIn ? { ok: true } : { error: '登录令牌无效' }, loggedIn ? 200 : 401) }
     if (!loggedIn) return answer({ error: '管理会话已失效，请重新登录' }, 401)
     if (endpoint === '/summary') { summaryReads++; return answer(summary()) }
     if (endpoint === '/stats') return answer(buildStats({}, []))
+    if (endpoint === '/disclaimer') return answer({ acknowledged: disclaimerAcknowledged })
+    if (endpoint === '/disclaimer/ack') { disclaimerAcknowledged = true; return answer({ ok: true }) }
     if (endpoint === '/settings') { Object.assign(settings, body); return answer({ settings }) }
     if (endpoint === '/key') return answer({ key })
     if (endpoint === '/key/rotate') { key = 'ofm-ui-rotated-key'; return answer({ key }) }
@@ -56,6 +59,12 @@ try {
   await page.locator('#login-key').fill(key)
   await page.getByRole('button', { name: '进入控制台' }).click()
   await page.getByTestId('overview-ready').waitFor()
+  await page.locator('.ofm-disclaimer-dialog').waitFor()
+  await page.locator('.ofm-disclaimer-dialog button.primary').click()
+  await page.locator('.ofm-disclaimer-dialog').waitFor({ state: 'detached' })
+  await page.locator('.ofm-sponsor-dialog').waitFor()
+  await page.locator('.ofm-sponsor-close').click()
+  await page.locator('.ofm-sponsor-dialog').waitFor({ state: 'hidden' })
   await nav('模型清单'); await page.getByTestId('models-ready').waitFor()
   await nav('用量统计'); await page.getByTestId('usage-ready').waitFor()
   await nav('服务设置'); await page.getByTestId('settings-ready').waitFor()
@@ -76,7 +85,7 @@ try {
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: '轮换密钥', exact: true }).click()
   await page.waitForFunction(() => document.getElementById('connection-key').value === 'ofm-ui-rotated-key')
-  await nav('免费账号渠道'); await page.getByLabel('搜索渠道').waitFor()
+  await nav('EAC router'); await page.getByLabel('搜索渠道').waitFor()
   await page.getByRole('tab', { name: '请求日志', exact: true }).click()
   // 等待轮询真实执行；刷新不应重置渠道子页。
   const previousReads = summaryReads
@@ -94,10 +103,23 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name} 不应溢出视口`)
     if (imageDir) await page.screenshot({ path: path.join(imageDir, `react-connection-${name}.png`), fullPage: true })
   }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.locator('.lang-toggle').click()
+  await page.getByTestId('overview-ready').waitFor()
+  assert.equal(await page.evaluate(() => localStorage.getItem('ofm-lang')), 'en')
+  assert.equal(requestLang, 'en')
+  await page.getByRole('heading', { name: 'Workspace overview', exact: true }).waitFor()
+  await nav('Service settings'); await page.getByTestId('settings-ready').waitFor()
+  await page.getByRole('heading', { name: 'Service settings', exact: true }).waitFor()
+  await page.locator('.lang-toggle').click()
+  await page.getByTestId('overview-ready').waitFor()
+  assert.equal(await page.evaluate(() => localStorage.getItem('ofm-lang')), 'zh')
+  assert.equal(requestLang, 'zh')
+  await page.getByRole('heading', { name: '工作空间概览', exact: true }).waitFor()
   await page.getByRole('button', { name: '退出管理', exact: true }).click()
   await page.getByTestId('login-screen').waitFor()
   assert.deepEqual(errors, [])
-  console.log('react UI: 登录失败/成功、七页面导航、草稿保留/保存、密钥显隐/复制/轮换、轮询保持子页、三种视口、退出通过')
+  console.log('react UI: 登录失败/成功、七页面导航、草稿保留/保存、密钥显隐/复制/轮换、轮询保持子页、三种视口、中英切换持久化与请求语言、退出通过')
 } finally {
   await browser.close(); management.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve))
 }

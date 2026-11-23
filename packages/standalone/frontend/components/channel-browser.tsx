@@ -4,6 +4,7 @@ import { providers } from 'ofm-provider-list'
 import { shared } from 'ofm-shared-client'
 import { Badge, Button, Card, Input } from './ui'
 import { t as consoleT, bindT, providerText, getLocale } from '../i18n.mjs'
+import { ProviderIcon } from './provider-icon'
 import type { Summary } from '../types'
 
 interface Status { closed?: boolean; accounts?: { total: number; enabled: number }; models?: { total: number; disabled: number } }
@@ -109,7 +110,7 @@ export function ChannelBrowser({ rpc, summary }: { rpc: Rpc; summary: Summary & 
         const status = statuses?.[provider.id]
         const state = status?.closed ? t('cb.closed') : (status?.accounts?.enabled ?? 0) > 0 ? t('cb.connected') : t('cb.pending')
         return <Card className="provider-card channel-directory-row" key={provider.id}>
-          <span className="provider-logo" style={{ color: provider.accent, backgroundColor: `${provider.accent}0d` }}>{providerText(provider, 'name').slice(0, 2).toUpperCase()}</span>
+          <span className="provider-logo"><ProviderIcon id={provider.id} name={providerText(provider, 'name')} size={18} /></span>
           <div className="channel-directory-name"><h2>{providerText(provider, 'name')}</h2><div className="provider-org">{providerText(provider, 'org')}</div><p className="provider-description">{providerText(provider, 'note')}</p></div>
           <div className="provider-counts"><span>{t('cb.accounts')} <strong>{status ? status.accounts?.total ?? 0 : '—'}</strong></span>
             <span>{t('cb.models')} <strong>{status ? Math.max(0, (status.models?.total ?? 0) - (status.models?.disabled ?? 0)) : '—'}</strong></span></div>
