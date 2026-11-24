@@ -245,9 +245,15 @@ export function Models({ summary, host, active }: { summary: Summary; host: Host
                   disabled={visibilitySaving || model.hiddenByGroup === true}
                   title={model.hiddenByGroup ? visibility.groupHidden : model.hiddenByUser ? visibility.show : visibility.hide}
                   aria-label={`${model.hiddenByUser ? visibility.show : visibility.hide}：${model.id}`}
-                  onClick={() => { const ids = summary.settings.hiddenModelIds ?? []; void saveVisibility({
-                    hiddenModelIds: ids.includes(model.id) ? ids.filter(id => id !== model.id) : [...ids, model.id],
-                  }) }}>{model.hiddenByUser ? <Eye size={16} /> : <EyeOff size={16} />}</Button>}
+                  onClick={() => {
+                    const ids = summary.settings.hiddenModelIds ?? []
+                    if (model.hiddenByUser) {
+                      const hidden = new Set(model.hiddenIds?.length ? model.hiddenIds : [model.id])
+                      void saveVisibility({ hiddenModelIds: ids.filter(id => !hidden.has(id)) })
+                      return
+                    }
+                    void saveVisibility({ hiddenModelIds: ids.includes(model.id) ? ids : [...ids, model.id] })
+                  }}>{model.hiddenByUser ? <Eye size={16} /> : <EyeOff size={16} />}</Button>}
                 <Button variant="ghost" title={t.format('mdl.copyIdTitle', { id: model.id })} aria-label={t.format('mdl.copyIdAria', { id: model.id })} onClick={() => copyModelId(model)}
                   className={copied === model.id ? 'md-copy-done' : ''}>
                   {copied === model.id ? <Check size={16} /> : <Copy size={16} />}

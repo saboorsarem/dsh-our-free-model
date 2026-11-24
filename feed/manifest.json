@@ -1,7 +1,7 @@
 {
   "version": "2.9.0",
   "base": "../",
-  "publishedAt": "2026-11-23T04:30:19.125Z",
+  "publishedAt": "2026-11-24T11:14:18.234Z",
   "notes": "",
   "files": [
     {
@@ -16,8 +16,8 @@
     },
     {
       "path": "client.js",
-      "size": 687678,
-      "sha256": "1780d650ddfa1b6603b6b5abd3bd02b642121560d41d9dde510866341de6d1f5"
+      "size": 687907,
+      "sha256": "de7f5ccca6e1a9f118233477c8c4a0b060d73e88f5b00d5edac11a616f19b65e"
     },
     {
       "path": "cordis.patch.yml",
@@ -31,8 +31,8 @@
     },
     {
       "path": "index.js",
-      "size": 149124,
-      "sha256": "991a660d0e108bd6c1c3b6c2a1e21aa3147c63f549c33770dae384a5d665ff9d"
+      "size": 149636,
+      "sha256": "efd3afdb062f8f1efcce9d9dad703545100c3c36254090a083111e1f91bb695f"
     },
     {
       "path": "LICENSE",
@@ -76,8 +76,8 @@
     },
     {
       "path": "src/catalog.js",
-      "size": 52683,
-      "sha256": "2d19a6f8731bfc96a548331b45471e148c55f2c331bfce0d17c4a7d70b4ac708"
+      "size": 55854,
+      "sha256": "11128a0af47d2ff56db879cc6664cb772661a564d7f2f81bcb391f97cfac17fd"
     },
     {
       "path": "src/chan-relay.js",
@@ -96,8 +96,8 @@
     },
     {
       "path": "src/core.js",
-      "size": 36550,
-      "sha256": "a741075480204f6d2e8dc27566fe33668c175793dd607bd3e83f6677cb7ccae9"
+      "size": 37277,
+      "sha256": "91e86ef82009abd09a64ee84c531be22f4caa845eaf7ebab44d2219621c2c665"
     },
     {
       "path": "src/disclaimer.js",
@@ -201,8 +201,8 @@
     },
     {
       "path": "src/forward.js",
-      "size": 74062,
-      "sha256": "de98dfb534b34e478b78160241c2d35cbabf9a8218feacd05f30ba970a856db9"
+      "size": 76697,
+      "sha256": "6ae0d5e489869ef36ef51012264938f7935500a290fcc8524c2d09fe1741beae"
     },
     {
       "path": "src/gemini.js",
@@ -211,8 +211,8 @@
     },
     {
       "path": "src/http.js",
-      "size": 34582,
-      "sha256": "25ad54af6b20818423a1bf73b61cc06604fb42b9cc3b0c4370cfc1e7bc8c436f"
+      "size": 35993,
+      "sha256": "3b97eff1612d5322eb6a9136c2e82d587e45838868a4e7db38697544236018f0"
     },
     {
       "path": "src/kilo.js",
@@ -281,13 +281,13 @@
     },
     {
       "path": "src/providers/index.js",
-      "size": 9785,
-      "sha256": "a294b96d5cadb99e8c71293a255add117ac54f528e02a7b8e92579833c0d09ef"
+      "size": 9784,
+      "sha256": "3ba757c252d18c0f2e1ed8547de1452162dffb18438dbe9d46e48d0bf3310b87"
     },
     {
       "path": "src/providers/registry.json",
-      "size": 137887,
-      "sha256": "234102ceda21c1b673ca41c60749a65858da65495c816a06ecfc7564eed90ce3"
+      "size": 139112,
+      "sha256": "b8ac7e8a256db368c98d99f1ccbebc1797bdb2ddb7eec928eec3d9c07b8e187d"
     },
     {
       "path": "src/recovery.js",
@@ -311,8 +311,8 @@
     },
     {
       "path": "src/store.js",
-      "size": 27185,
-      "sha256": "e2a33048d6f542fddd96a6731d13bb52bff2ad409cc52ee65663e8a8d09c8b8e"
+      "size": 28900,
+      "sha256": "f5a12285ffbde7a849b5413a9ce0a9306f4ee87d9a9deef23ec7d7159614d2ef"
     },
     {
       "path": "src/stream.js",
@@ -341,8 +341,8 @@
     },
     {
       "path": "src/trust.js",
-      "size": 8306,
-      "sha256": "0c1f99a77264afe95432f15c6777d234a8f8f0d4cf7380e220c03c7e315da24d"
+      "size": 8616,
+      "sha256": "65249ec3bd32762624cd7a326758827e47e3f5067ca18d6be79a2ac01d67becd"
     },
     {
       "path": "src/updater.js",
@@ -381,8 +381,8 @@
     },
     {
       "path": "vendor/channel-pack/pack.js",
-      "size": 2860632,
-      "sha256": "15835e58d72a2dcb3c8efc3555ed5f7d5fd49b6090de553b68957021bbb45799"
+      "size": 2862328,
+      "sha256": "88a248f1b22f51438ddefce2ca41078a1b2c9fb74db74307ab02139becd238ef"
     },
     {
       "path": "vendor/channel-pack/qoder-auth-wasm.wasm",
@@ -405,5 +405,5 @@
       "sha256": "975b70c8d2fc53ed5928446f4b98a81cb369203894017201975b06ed554b0eca"
     }
   ],
-  "signature": "pZBUGHjCsCloACFPd+OzRtpV3wr17roMBZbAei/Sw9n2546dOJEBnlficQtijaZXfpQjAfRgyVOest8/GyUYBQ=="
+  "signature": "b47CBT0aFz1BVWakbMe+HclsVRbOC6++jaSIhQ4O1/dNLmJpn7+P7eIYx8CkF0IoXRmDgno87ukj77TilOqHCw=="
 }
