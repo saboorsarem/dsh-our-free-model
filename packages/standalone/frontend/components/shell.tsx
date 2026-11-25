@@ -14,6 +14,14 @@ type NavIcon = ComponentType<{ size?: number | string; strokeWidth?: number | st
 interface NavItem { id: Page; name: string; icon: NavIcon }
 interface NavGroup { label: string; items: NavItem[] }
 
+// The replacement gateway has no feedback collector and the old host is being
+// retired. Keep the page implementation for a future self-hosted collector,
+// but do not advertise an entry that can only answer 503.
+export const FEEDBACK_ENABLED = false
+const FEEDBACK_NAV: NavItem[] = FEEDBACK_ENABLED
+  ? [{ id: 'feedback', name: '反馈与许愿', icon: MessageSquareWarning }]
+  : []
+
 const CORE_NAVIGATION: NavGroup[] = [
   { label: t('nav.workspace'), items: [
     { id: 'overview', name: t('nav.overview'), icon: LayoutDashboard },
@@ -36,7 +44,7 @@ const CORE_NAVIGATION: NavGroup[] = [
     { id: 'updates', name: t('nav.updates'), icon: RotateCw },
   ] },
   { label: t('nav.groupSponsor'), items: [
-    { id: 'feedback', name: t('nav.feedback'), icon: MessageSquareWarning },
+    ...FEEDBACK_NAV,
     { id: 'sponsor', name: t('nav.sponsor'), icon: Coffee },
   ] },
 ]
